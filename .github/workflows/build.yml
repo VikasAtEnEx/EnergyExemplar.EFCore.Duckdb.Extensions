@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build-and-test:
     name: Build and Test
-    runs-on: self-hosted
+    runs-on: [self-hosted, windows]
     timeout-minutes: 30
     
     strategy:
@@ -38,8 +38,8 @@ jobs:
         dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
 
     - name: Add .NET to PATH
-      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $env:GITHUB_PATH
-      shell: pwsh
+      run: Add-Content -Path $env:GITHUB_PATH -Value $env:DOTNET_INSTALL_DIR
+      shell: powershell
 
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -97,7 +97,7 @@ jobs:
 
   security-scan:
     name: Security Scan
-    runs-on: self-hosted
+    runs-on: [self-hosted, windows]
     needs: build-and-test
     
     steps:
@@ -111,8 +111,8 @@ jobs:
         dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
 
     - name: Add .NET to PATH
-      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $env:GITHUB_PATH
-      shell: pwsh
+      run: Add-Content -Path $env:GITHUB_PATH -Value $env:DOTNET_INSTALL_DIR
+      shell: powershell
 
     - name: Restore dependencies
       run: dotnet restore --verbosity normal
@@ -148,7 +148,7 @@ jobs:
 
   create-release:
     name: Create Release and Tag
-    runs-on: self-hosted
+    runs-on: [self-hosted, windows]
     needs: [build-and-test, security-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
@@ -165,12 +165,12 @@ jobs:
         dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
 
     - name: Add .NET to PATH
-      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $env:GITHUB_PATH
-      shell: pwsh
+      run: Add-Content -Path $env:GITHUB_PATH -Value $env:DOTNET_INSTALL_DIR
+      shell: powershell
 
     - name: Determine version
       id: version
-      shell: pwsh
+      shell: powershell
       run: |
         # Auto-increment version based on existing tags
         $latestTag = git tag -l "0.1.*" --sort=-version:refname | Select-Object -First 1
@@ -192,7 +192,7 @@ jobs:
         path: ./artifacts
 
     - name: Create and push tag
-      shell: pwsh
+      shell: powershell
       run: |
         $version = "${{ steps.version.outputs.version }}"
         git config --local user.email "action@github.com"
