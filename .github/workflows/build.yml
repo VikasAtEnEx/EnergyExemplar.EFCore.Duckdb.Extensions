@@ -9,7 +9,7 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  DOTNET_INSTALL_DIR: ${{ github.workspace }}/.dotnet
+  DOTNET_INSTALL_DIR: 'D:\tools\.dotnet'
 
 # Cancel in-progress runs when new commits are pushed
 concurrency:
@@ -38,8 +38,8 @@ jobs:
         dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
 
     - name: Add .NET to PATH
-      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $GITHUB_PATH
-      shell: bash
+      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $env:GITHUB_PATH
+      shell: pwsh
 
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -111,8 +111,8 @@ jobs:
         dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
 
     - name: Add .NET to PATH
-      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $GITHUB_PATH
-      shell: bash
+      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $env:GITHUB_PATH
+      shell: pwsh
 
     - name: Restore dependencies
       run: dotnet restore --verbosity normal
@@ -165,24 +165,25 @@ jobs:
         dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
 
     - name: Add .NET to PATH
-      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $GITHUB_PATH
-      shell: bash
+      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $env:GITHUB_PATH
+      shell: pwsh
 
     - name: Determine version
       id: version
+      shell: pwsh
       run: |
         # Auto-increment version based on existing tags
-        LATEST_TAG=$(git tag -l "0.1.*" --sort=-version:refname | head -n 1)
-        if [ -z "$LATEST_TAG" ]; then
-          VERSION="0.1.0"
-        else
+        $latestTag = git tag -l "0.1.*" --sort=-version:refname | Select-Object -First 1
+        if ([string]::IsNullOrEmpty($latestTag)) {
+          $version = "0.1.0"
+        } else {
           # Extract patch version and increment
-          PATCH=$(echo $LATEST_TAG | sed 's/0\.1\.//')
-          NEW_PATCH=$((PATCH + 1))
-          VERSION="0.1.$NEW_PATCH"
-        fi
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version to be tagged: $VERSION"
+          $patch = $latestTag -replace '0\.1\.', ''
+          $newPatch = [int]$patch + 1
+          $version = "0.1.$newPatch"
+        }
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        Write-Host "Version to be tagged: $version"
 
     - name: Download build artifacts
       uses: actions/download-artifact@v4
@@ -191,12 +192,13 @@ jobs:
         path: ./artifacts
 
     - name: Create and push tag
+      shell: pwsh
       run: |
-        VERSION="${{ steps.version.outputs.version }}"
+        $version = "${{ steps.version.outputs.version }}"
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git tag -a "$VERSION" -m "Release $VERSION"
-        git push origin "$VERSION"
+        git tag -a "$version" -m "Release $version"
+        git push origin "$version"
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
