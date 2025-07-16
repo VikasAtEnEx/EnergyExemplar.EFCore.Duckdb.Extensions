@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+
+# Cancel in-progress runs when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+      fail-fast: false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', '**/paket.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore dependencies
+      run: dotnet restore
+      working-directory: ./Source
+
+    - name: Check code formatting
+      run: dotnet format EnergyExemplar.EFCore.Duckdb.Extensions.sln --verify-no-changes
+      working-directory: ./Source
+
+    - name: Build
+      run: dotnet build --no-restore --configuration ${{ matrix.configuration }}
+      working-directory: ./Source
+
+    - name: Test
+      run: dotnet test --no-build --verbosity normal --configuration ${{ matrix.configuration }} --collect:"XPlat Code Coverage" --results-directory ../coverage/${{ matrix.configuration }}
+      working-directory: ./Tests
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      if: matrix.configuration == 'Release'
+      with:
+        directory: ./coverage/Release/
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.configuration }}
+        path: ./coverage/${{ matrix.configuration }}/
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore --verbosity normal
+      working-directory: ./Source
+
+    - name: Check for vulnerable packages
+      run: dotnet list package --vulnerable
+      working-directory: ./Source
+
+    - name: Check for outdated packages
+      run: dotnet list package --outdated
+      working-directory: ./Source
+
+    - name: Generate dependency report
+      run: |
+        echo "## Dependency Analysis Report" > dependency-report.md
+        echo "" >> dependency-report.md
+        echo "### Vulnerable Packages:" >> dependency-report.md
+        dotnet list package --vulnerable >> dependency-report.md 2>&1 || echo "No vulnerable packages found" >> dependency-report.md
+        echo "" >> dependency-report.md
+        echo "### Outdated Packages:" >> dependency-report.md
+        dotnet list package --outdated >> dependency-report.md 2>&1 || echo "No outdated packages found" >> dependency-report.md
+      working-directory: ./Source
+
+    - name: Upload dependency report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: dependency-report
+        path: ./Source/dependency-report.md
+
+  create-release:
+    name: Create Release and Tag
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Determine version
+      id: version
+      run: |
+        # Auto-increment version based on existing tags
+        LATEST_TAG=$(git tag -l "0.1.*" --sort=-version:refname | head -n 1)
+        if [ -z "$LATEST_TAG" ]; then
+          VERSION="0.1.0"
+        else
+          # Extract patch version and increment
+          PATCH=$(echo $LATEST_TAG | sed 's/0\.1\.//')
+          NEW_PATCH=$((PATCH + 1))
+          VERSION="0.1.$NEW_PATCH"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version to be tagged: $VERSION"
+
+    - name: Build and pack
+      run: |
+        dotnet restore
+        dotnet build --configuration Release --no-restore
+        dotnet pack --configuration Release --no-build --output ./artifacts
+      working-directory: ./Source
+
+    - name: Create and push tag
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git tag -a "$VERSION" -m "Release $VERSION"
+        git push origin "$VERSION"
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: Release ${{ steps.version.outputs.version }}
+        body: |
+          ## EnergyExemplar.EFCore.Duckdb.Extensions ${{ steps.version.outputs.version }}
+          
+          🚀 **What's Changed**
+          - Latest updates and improvements
+          - Bug fixes and enhancements
+          
+          📦 **Installation**
+          ```bash
+          git clone https://github.com/VikasAtEnEx/EnergyExemplar.EFCore.Duckdb.Extensions.git
+          cd EnergyExemplar.EFCore.Duckdb.Extensions
+          git checkout ${{ steps.version.outputs.version }}
+          ```
+          
+          🔧 **Build from source**
+          ```bash
+          dotnet build Source/EnergyExemplar.EFCore.Duckdb.Extensions.csproj --configuration Release
+          ```
+        files: |
+          ./Source/artifacts/*.nupkg
+        draft: false
+        prerelease: false
+        generate_release_notes: true
