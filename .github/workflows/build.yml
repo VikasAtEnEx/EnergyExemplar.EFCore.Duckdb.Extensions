@@ -9,6 +9,7 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
+  DOTNET_INSTALL_DIR: ${{ github.workspace }}/.dotnet
 
 # Cancel in-progress runs when new commits are pushed
 concurrency:
@@ -34,6 +35,11 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
+
+    - name: Add .NET to PATH
+      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $GITHUB_PATH
+      shell: bash
 
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -102,6 +108,11 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
+
+    - name: Add .NET to PATH
+      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $GITHUB_PATH
+      shell: bash
 
     - name: Restore dependencies
       run: dotnet restore --verbosity normal
@@ -146,6 +157,16 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-install-dir: ${{ env.DOTNET_INSTALL_DIR }}
+
+    - name: Add .NET to PATH
+      run: echo "${{ env.DOTNET_INSTALL_DIR }}" >> $GITHUB_PATH
+      shell: bash
 
     - name: Determine version
       id: version
